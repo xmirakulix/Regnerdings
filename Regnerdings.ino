@@ -2,26 +2,34 @@
 #include <PubSubClient.h>
 
 #include "include/WiFiSecret.h"
+#include "include/th_sensor.h"
+
+#define NUMPORTS 5
+const char m_CompileDate[] = __DATE__ " " __TIME__;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-#define NUMPORTS 5
-
-// Pinout guide https://randomnerdtutorials.com/esp8266-pinout-reference-gpios/
+// D1 Pinout guide https://randomnerdtutorials.com/esp8266-pinout-reference-gpios/
+// relay/switch config
 byte m_Ports[NUMPORTS] = {D1, D2, D5, D6, D7};
-byte m_i2cPorts[] = {D3, D4}; // GPIO0, GPIO2, must be HIGH during boot
-
-const char m_CompileDate[] = __DATE__ " " __TIME__;
 bool m_SwitchState[NUMPORTS];
+
+// temperature/humidity sensor config
+byte m_i2cPorts[] = {D3, D4}; // SDA, SCL: GPIO0, GPIO2, must be HIGH during boot
+unsigned long m_LastTempTransmit = 0;
 
 void setup()
 {
     Serial.begin(115200);
-    pinMode(LED_BUILTIN, OUTPUT);
+
+    sensor_init(m_i2cPorts[0], m_i2cPorts[1]);
 
     wifi_setup();
     mqtt_setup();
+
+    txSwitchState();
+    txTemperatureState();
 }
 
 void loop()
@@ -29,6 +37,12 @@ void loop()
     if (!client.loop())
     {
         mqtt_setup();
+    }
+
+    if (millis() > m_LastTempTransmit + (60 * 1000))
+    {
+        txTemperatureState();
+        m_LastTempTransmit = millis();
     }
 }
 
@@ -39,13 +53,13 @@ void wifi_setup()
     WiFi.hostname("Regnerdings");
     WiFi.begin(m_Ssid, m_Pass);
 
+    Serial.println("Connecting to WiFi..");
     while (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println("Connecting to WiFi..");
         delay(100);
     }
 
-    Serial.printf("WiFi Connected: %s, RSSI: %d\n", WiFi.localIP().toString(), WiFi.RSSI());
+    Serial.printf("WiFi Connected: %s, RSSI: %d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
 }
 
 void mqtt_setup()
@@ -75,6 +89,7 @@ void mqtt_setup()
         sprintf(cfgMsg + strlen(cfgMsg), "  \"unique_id\":     \"Temperature\",");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"device\":        { \"ids\" : [\"Regnerdings\"], \"name\" : \"Regnerdings\", \"mf\": \"xmirakulix\", \"mdl\": \"Regnerdings\", \"sw\": \"%s\" },", m_CompileDate);
         sprintf(cfgMsg + strlen(cfgMsg), "  \"device_class\":  \"temperature\",");
+        sprintf(cfgMsg + strlen(cfgMsg), "  \"unit_of_measurement\":  \"°C\",");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"value_template\":\"{{ value_json.temperature}}\",");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"state_topic\":   \"disc/sensor/Regnerdings/state\"");
         sprintf(cfgMsg + strlen(cfgMsg), "}");
@@ -89,6 +104,7 @@ void mqtt_setup()
         sprintf(cfgMsg + strlen(cfgMsg), "  \"unique_id\":     \"Humidity\",");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"device\":        { \"identifiers\" : [\"Regnerdings\"], \"name\" : \"Regnerdings\" },");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"device_class\":  \"humidity\",");
+        sprintf(cfgMsg + strlen(cfgMsg), "  \"unit_of_measurement\":  \"%%\",");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"value_template\":\"{{ value_json.humidity}}\",");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"state_topic\":   \"disc/sensor/Regnerdings/state\"");
         sprintf(cfgMsg + strlen(cfgMsg), "}");
@@ -114,7 +130,6 @@ void mqtt_setup()
             sprintf(cfgMsg + strlen(cfgMsg), "  \"state_topic\":   \"disc/switch/Regnerdings/state\",");
             sprintf(cfgMsg + strlen(cfgMsg), "  \"command_topic\": \"%s\"", cmd_topic);
             sprintf(cfgMsg + strlen(cfgMsg), "}");
-
             Serial.printf("Sending P%d config message to HA\n", i);
             client.publish(topic, cfgMsg, true);
             client.subscribe(cmd_topic);
@@ -123,8 +138,7 @@ void mqtt_setup()
             setState(i, false);
         }
 
-        txSwitchState();
-        Serial.println("Config message sent, state: " + String(client.state()));
+        Serial.println("Config message sent, client state: " + String(client.state()));
     }
 }
 
@@ -153,6 +167,17 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
     }
 }
 
+// transmit temperature and humidity to HA
+void txTemperatureState()
+{
+    String state = "";
+
+    state = "{ \"temperature\" : " + String(read_temperature()) + ", \"humidity\" : " + String(read_humidity()) + " }";
+
+    Serial.printf("Temp/Humid state: %s\n", state.c_str());
+    client.publish("disc/sensor/Regnerdings/state", state.c_str(), false);
+}
+
 // transmit state of all switches to HA
 void txSwitchState()
 {
@@ -165,7 +190,7 @@ void txSwitchState()
     state = state.substring(0, state.length() - 2);
     state += "}";
 
-    Serial.printf("State: %s\n", state.c_str());
+    Serial.printf("Switch state: %s\n", state.c_str());
     client.publish("disc/switch/Regnerdings/state", state.c_str(), false);
 }
 
@@ -180,12 +205,10 @@ void setState(int port, bool state)
 {
     if (state)
     {
-        digitalWrite(LED_BUILTIN, LOW);
         digitalWrite(m_Ports[port - 1], HIGH);
     }
     else
     {
-        digitalWrite(LED_BUILTIN, HIGH);
         digitalWrite(m_Ports[port - 1], LOW);
     }
 
