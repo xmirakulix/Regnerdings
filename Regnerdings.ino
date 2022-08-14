@@ -7,7 +7,10 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 
 #define NUMPORTS 5
-byte m_Ports[NUMPORTS] = {D0, D5, D6, D7, D8};
+
+// Pinout guide https://randomnerdtutorials.com/esp8266-pinout-reference-gpios/
+byte m_Ports[NUMPORTS] = {D1, D2, D5, D6, D7};
+byte m_i2cPorts[] = {D3, D4}; // GPIO0, GPIO2, must be HIGH during boot
 
 const char m_CompileDate[] = __DATE__ " " __TIME__;
 bool m_SwitchState[NUMPORTS];
