@@ -7,6 +7,18 @@ hd44780_I2Cexp m_Lcd;
 
 bool m_IsLcdBacklight = true;        // is the backlight on?
 unsigned long m_LastBacklightOn = 0; // time of last backlight on
+unsigned int m_LastEditChar = 0;
+
+const char m_EditableChars[] = {'x', 0xFF};
+
+char getEditChar()
+{
+    if (++m_LastEditChar >= sizeof(m_EditableChars))
+    {
+        m_LastEditChar = 0;
+    }
+    return m_EditableChars[m_LastEditChar];
+}
 
 void enableLcdBacklight()
 {

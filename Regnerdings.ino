@@ -54,6 +54,8 @@ void setup()
 
     txSwitchState();
     txTemperatureState();
+
+    Serial.println("Setup complete, starting loop...");
 }
 
 void loop()
@@ -195,6 +197,7 @@ void mqtt_setup()
         }
 
         Serial.println("Config message sent, client state: " + String(client.state()));
+        enableLcdBacklight();
         m_Lcd.print("HA config sent!");
         delay(2000);
         m_Lcd.clear();
@@ -227,18 +230,22 @@ void handleScreen()
             if (getSwitch(m_EditPort) == "ON")
             {
                 setSwitch(m_EditPort, false);
-                Serial.printf("Screen handling LONG, port OFF: %d\n", m_EditPort);
             }
             else
             {
                 setSwitch(m_EditPort, true);
-                Serial.printf("Screen handling SHORT, port ON: %d\n", m_EditPort);
             }
         }
+        Serial.printf("Screen handling LONG, port %d: %s\n", m_EditPort, getSwitch(m_EditPort).c_str());
         m_LastScreenUpdate = 0;
     }
 
-    if (millis() > (m_LastScreenUpdate + 10 * 1000))
+    if ((m_EditPort != 0) && (millis() > (m_LastButtonPressed + 10 * 1000)))
+    {
+        m_EditPort = 0;
+    }
+
+    if (millis() > (m_LastScreenUpdate + 300))
     {
         m_LastScreenUpdate = millis();
         char line[17];
@@ -253,7 +260,28 @@ void handleScreen()
 
         for (int i = 1; i <= NUMPORTS; i++)
         {
-            strcat(line, (getSwitch(i) == "ON" ? " >" : " -"));
+            bool act = getSwitch(i) == "ON" ? true : false;
+            strcat(line, " ");
+
+            if (m_EditPort == i)
+            {
+                enableLcdBacklight();
+
+                char c = getEditChar();
+
+                if (c == 'x')
+                {
+                    sprintf(line + strlen(line), "%c", act ? '>' : '-');
+                }
+                else
+                {
+                    sprintf(line + strlen(line), "%c", c);
+                }
+            }
+            else
+            {
+                sprintf(line + strlen(line), "%c", act ? '>' : '-');
+            }
         }
         m_Lcd.print(line);
     }
