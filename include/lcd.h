@@ -21,6 +21,14 @@ void disableLcdBacklight()
     m_IsLcdBacklight = false;
 }
 
+void handleLcdBacklight()
+{
+    if (m_IsLcdBacklight && (millis() - m_LastBacklightOn) > 10 * 1000)
+    {
+        disableLcdBacklight();
+    }
+}
+
 void setupLcd()
 {
     int status = m_Lcd.begin(16, 2);
@@ -35,13 +43,5 @@ void setupLcd()
         m_Lcd.clear();
         m_Lcd.noCursor();
         enableLcdBacklight();
-    }
-}
-
-void handleLcd()
-{
-    if (m_IsLcdBacklight && (millis() - m_LastBacklightOn) > 10 * 1000)
-    {
-        disableLcdBacklight();
     }
 }

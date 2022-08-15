@@ -21,6 +21,25 @@ unsigned long m_LastOnTime[NUMPORTS];
 // temperature/humidity sensor config
 const byte m_i2cPorts[] = {D3, D4}; // SDA, SCL: GPIO0, GPIO2, must be HIGH during boot
 unsigned long m_LastTempTransmit = 0;
+int m_LastTemperature = 0;
+int m_LastHumidity = 0;
+
+// button config
+const byte m_Button = D0;
+unsigned long m_LastButtonPressed = 0;
+bool m_ButtonPressed = false;
+enum buttonAction
+{
+    HANDLED = -1,
+    NONE = 0,
+    SHORT = 1,
+    LONG = 2
+};
+int m_LastButtonAction = NONE;
+
+// screen config
+unsigned long m_LastScreenUpdate = 0;
+int m_EditPort = 0;
 
 void setup()
 {
@@ -28,6 +47,7 @@ void setup()
 
     sensor_init(m_i2cPorts[0], m_i2cPorts[1]);
     setupLcd();
+    button_setup();
 
     wifi_setup();
     mqtt_setup();
@@ -38,7 +58,8 @@ void setup()
 
 void loop()
 {
-    handleLcd();
+    handleScreen();
+    handleButton();
 
     if (!client.loop())
     {
@@ -63,6 +84,11 @@ void loop()
     }
 }
 
+void button_setup()
+{
+    pinMode(m_Button, INPUT);
+}
+
 void wifi_setup()
 {
     // Connect to WiFi
@@ -78,8 +104,8 @@ void wifi_setup()
         delay(100);
     }
 
-    Serial.printf("WiFi Connected: %s, RSSI: %d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
-    m_Lcd.print("WiFi Connected!");
+    Serial.printf("WiFi connected: %s, RSSI: %d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+    m_Lcd.print("WiFi connected!");
     delay(2000);
     m_Lcd.clear();
 }
@@ -175,6 +201,110 @@ void mqtt_setup()
     }
 }
 
+void handleScreen()
+{
+    handleLcdBacklight();
+
+    if (m_LastButtonAction == SHORT)
+    {
+        m_LastButtonAction = HANDLED;
+        enableLcdBacklight();
+
+        if (++m_EditPort > NUMPORTS)
+        {
+            m_EditPort = 1;
+        }
+        Serial.printf("Screen handling SHORT, port: %d\n", m_EditPort);
+        m_LastScreenUpdate = 0;
+    }
+    else if (m_LastButtonAction == LONG)
+    {
+        m_LastButtonAction = HANDLED;
+        enableLcdBacklight();
+
+        if (m_EditPort > 0)
+        {
+            if (getSwitch(m_EditPort) == "ON")
+            {
+                setSwitch(m_EditPort, false);
+                Serial.printf("Screen handling LONG, port OFF: %d\n", m_EditPort);
+            }
+            else
+            {
+                setSwitch(m_EditPort, true);
+                Serial.printf("Screen handling SHORT, port ON: %d\n", m_EditPort);
+            }
+        }
+        m_LastScreenUpdate = 0;
+    }
+
+    if (millis() > (m_LastScreenUpdate + 10 * 1000))
+    {
+        m_LastScreenUpdate = millis();
+        char line[17];
+        // m_Lcd.clear();
+        m_Lcd.setCursor(0, 0);
+
+        sprintf(line, "  T:%d%cC H:%d%% ", m_LastTemperature, 0xDF, m_LastHumidity);
+        m_Lcd.print(line);
+
+        m_Lcd.setCursor(0, 1);
+        strcpy(line, "Ports:");
+
+        for (int i = 1; i <= NUMPORTS; i++)
+        {
+            strcat(line, (getSwitch(i) == "ON" ? " >" : " -"));
+        }
+        m_Lcd.print(line);
+    }
+}
+
+void handleButton()
+{
+    // still unhandled button press active
+    if (m_LastButtonAction > 0)
+    {
+        return;
+    }
+
+    int newState = digitalRead(m_Button);
+
+    // new button press detected
+    if (!m_ButtonPressed && (newState == LOW))
+    {
+        m_LastButtonPressed = millis();
+        m_ButtonPressed = true;
+        Serial.println("Button pressed");
+        return;
+    }
+
+    // button no longer presssed and was short
+    if (m_ButtonPressed && (newState == HIGH) && ((millis() - m_LastButtonPressed) < 500) && (m_LastButtonAction == NONE))
+    {
+        m_LastButtonAction = SHORT;
+        m_ButtonPressed = false;
+        Serial.println("Button action short detected");
+    }
+    // button still pressed, but already long
+    else if (m_ButtonPressed && (millis() > (m_LastButtonPressed + 1000)) && (m_LastButtonAction == NONE))
+    {
+        m_LastButtonAction = LONG;
+        Serial.println("Button action long detected");
+    }
+    // button no longer pressed
+    else if (m_ButtonPressed && (newState == HIGH))
+    {
+        m_ButtonPressed = false;
+        Serial.println("Button no longer pressed, no action detected");
+    }
+
+    if (!m_ButtonPressed && (m_LastButtonAction == HANDLED))
+    {
+        m_LastButtonAction = NONE;
+        Serial.println("Button not pressed and handle finished");
+    }
+}
+
 void mqtt_callback(char *topic, byte *payload, unsigned int length)
 {
     char msg[50] = "";
@@ -203,44 +333,29 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
 // transmit temperature and humidity to HA
 void txTemperatureState()
 {
-    String mqtt_state = "";
-    char lcd_state[17];
+    m_LastTemperature = read_temperature();
+    m_LastHumidity = read_humidity();
 
-    int temperature = read_temperature();
-    int humidity = read_humidity();
+    char mqtt_state[100];
+    sprintf(mqtt_state, "{ \"temperature\": %d, \"humidity\": %d }", m_LastTemperature, m_LastHumidity);
 
-    mqtt_state = "{ \"temperature\" : " + String(temperature) + ", \"humidity\" : " + String(humidity) + " }";
-    sprintf(lcd_state, "  T:%d%cC H:%d%%", temperature, 0xDF, humidity);
-
-    Serial.printf("Temp/Humid state: %s\n", mqtt_state.c_str());
-
-    m_Lcd.setCursor(0, 0);
-    m_Lcd.write(lcd_state);
-    // enableLcdBacklight();
-
-    client.publish("disc/sensor/Regnerdings/state", mqtt_state.c_str(), false);
+    Serial.printf("Temp/Humid state: %s\n", mqtt_state);
+    client.publish("disc/sensor/Regnerdings/state", mqtt_state, false);
 }
 
 // transmit state of all switches to HA
 void txSwitchState()
 {
     String mqtt_state = "{";
-    String lcd_state = "Ports: ";
 
     for (int i = 1; i <= NUMPORTS; i++)
     {
         mqtt_state += "\"P" + String(i) + "\" : \"" + getSwitch(i) + "\", ";
-        lcd_state += (getSwitch(i) == "ON" ? "> " : "- ");
     }
     mqtt_state = mqtt_state.substring(0, mqtt_state.length() - 2);
     mqtt_state += "}";
 
     Serial.printf("Switch state: %s\n", mqtt_state.c_str());
-
-    m_Lcd.setCursor(0, 1);
-    m_Lcd.write(lcd_state.c_str());
-    enableLcdBacklight();
-
     client.publish("disc/switch/Regnerdings/state", mqtt_state.c_str(), false);
 }
 
@@ -266,6 +381,7 @@ void setSwitch(int port, bool state)
 
     m_SwitchState[port - 1] = state;
     txSwitchState();
+    m_LastScreenUpdate = 0;
 }
 
 // parse port from topic
