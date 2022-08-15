@@ -2,6 +2,7 @@
 #include <PubSubClient.h>
 
 #include "include/WiFiSecret.h"
+#include "include/lcd.h"
 #include "include/th_sensor.h"
 
 #define NUMPORTS 5
@@ -12,11 +13,13 @@ PubSubClient client(espClient);
 
 // D1 Pinout guide https://randomnerdtutorials.com/esp8266-pinout-reference-gpios/
 // relay/switch config
-byte m_Ports[NUMPORTS] = {D1, D2, D5, D6, D7};
+const byte m_Ports[NUMPORTS] = {D1, D2, D5, D6, D7};
 bool m_SwitchState[NUMPORTS];
+const unsigned long m_MaxOnDuration = 3600 * 1000; // max one hour
+unsigned long m_LastOnTime[NUMPORTS];
 
 // temperature/humidity sensor config
-byte m_i2cPorts[] = {D3, D4}; // SDA, SCL: GPIO0, GPIO2, must be HIGH during boot
+const byte m_i2cPorts[] = {D3, D4}; // SDA, SCL: GPIO0, GPIO2, must be HIGH during boot
 unsigned long m_LastTempTransmit = 0;
 
 void setup()
@@ -24,6 +27,7 @@ void setup()
     Serial.begin(115200);
 
     sensor_init(m_i2cPorts[0], m_i2cPorts[1]);
+    setupLcd();
 
     wifi_setup();
     mqtt_setup();
@@ -34,15 +38,28 @@ void setup()
 
 void loop()
 {
+    handleLcd();
+
     if (!client.loop())
     {
         mqtt_setup();
     }
 
+    // transmit temperature and humidity
     if (millis() > m_LastTempTransmit + (60 * 1000))
     {
         txTemperatureState();
         m_LastTempTransmit = millis();
+    }
+
+    // safeguard max on duration
+    for (int i = 1; i <= NUMPORTS; i++)
+    {
+        if ((getSwitch(i) == "ON") && (millis() > (m_LastOnTime[i - 1] + m_MaxOnDuration)))
+        {
+            setSwitch(i, false);
+            Serial.printf("Emergency shutoff on port: %d!\n", i);
+        }
     }
 }
 
@@ -53,13 +70,18 @@ void wifi_setup()
     WiFi.hostname("Regnerdings");
     WiFi.begin(m_Ssid, m_Pass);
 
-    Serial.println("Connecting to WiFi..");
+    Serial.println("Connecting to WiFi...");
+    m_Lcd.print("WiFi connecting");
+    m_Lcd.setCursor(0, 1);
     while (WiFi.status() != WL_CONNECTED)
     {
         delay(100);
     }
 
     Serial.printf("WiFi Connected: %s, RSSI: %d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+    m_Lcd.print("WiFi Connected!");
+    delay(2000);
+    m_Lcd.clear();
 }
 
 void mqtt_setup()
@@ -74,13 +96,20 @@ void mqtt_setup()
         while (!client.connected())
         {
             Serial.println("Connecting to MQTT...");
+            m_Lcd.print("MQTT connecting");
+            m_Lcd.setCursor(0, 1);
             client.connect("Regnerdings", "mosquitto", "mosquitto", "/home/state", 1, true, "offline");
             delay(100);
         }
         Serial.println("Connected to MQTT");
+        m_Lcd.print("MQTT connected!");
+        delay(2000);
+        m_Lcd.clear();
 
         char topic[100];
         char cfgMsg[1024];
+        m_Lcd.print("HA config...");
+        m_Lcd.setCursor(0, 1);
 
         // configure device temp
         strcpy(topic, "disc/sensor/Regnerdings/T/config");
@@ -130,15 +159,19 @@ void mqtt_setup()
             sprintf(cfgMsg + strlen(cfgMsg), "  \"state_topic\":   \"disc/switch/Regnerdings/state\",");
             sprintf(cfgMsg + strlen(cfgMsg), "  \"command_topic\": \"%s\"", cmd_topic);
             sprintf(cfgMsg + strlen(cfgMsg), "}");
+
             Serial.printf("Sending P%d config message to HA\n", i);
             client.publish(topic, cfgMsg, true);
             client.subscribe(cmd_topic);
 
             pinMode(m_Ports[i - 1], OUTPUT);
-            setState(i, false);
+            setSwitch(i, false);
         }
 
         Serial.println("Config message sent, client state: " + String(client.state()));
+        m_Lcd.print("HA config sent!");
+        delay(2000);
+        m_Lcd.clear();
     }
 }
 
@@ -155,11 +188,11 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
 
     if (strcmp(msg, "ON") == 0)
     {
-        setState(port, true);
+        setSwitch(port, true);
     }
     else if (strcmp(msg, "OFF") == 0)
     {
-        setState(port, false);
+        setSwitch(port, false);
     }
     else
     {
@@ -170,28 +203,45 @@ void mqtt_callback(char *topic, byte *payload, unsigned int length)
 // transmit temperature and humidity to HA
 void txTemperatureState()
 {
-    String state = "";
+    String mqtt_state = "";
+    char lcd_state[17];
 
-    state = "{ \"temperature\" : " + String(read_temperature()) + ", \"humidity\" : " + String(read_humidity()) + " }";
+    int temperature = read_temperature();
+    int humidity = read_humidity();
 
-    Serial.printf("Temp/Humid state: %s\n", state.c_str());
-    client.publish("disc/sensor/Regnerdings/state", state.c_str(), false);
+    mqtt_state = "{ \"temperature\" : " + String(temperature) + ", \"humidity\" : " + String(humidity) + " }";
+    sprintf(lcd_state, "  T:%d%cC H:%d%%", temperature, 0xDF, humidity);
+
+    Serial.printf("Temp/Humid state: %s\n", mqtt_state.c_str());
+
+    m_Lcd.setCursor(0, 0);
+    m_Lcd.write(lcd_state);
+    // enableLcdBacklight();
+
+    client.publish("disc/sensor/Regnerdings/state", mqtt_state.c_str(), false);
 }
 
 // transmit state of all switches to HA
 void txSwitchState()
 {
-    String state = "{";
+    String mqtt_state = "{";
+    String lcd_state = "Ports: ";
 
     for (int i = 1; i <= NUMPORTS; i++)
     {
-        state += "\"P" + String(i) + "\" : \"" + getSwitch(i) + "\", ";
+        mqtt_state += "\"P" + String(i) + "\" : \"" + getSwitch(i) + "\", ";
+        lcd_state += (getSwitch(i) == "ON" ? "> " : "- ");
     }
-    state = state.substring(0, state.length() - 2);
-    state += "}";
+    mqtt_state = mqtt_state.substring(0, mqtt_state.length() - 2);
+    mqtt_state += "}";
 
-    Serial.printf("Switch state: %s\n", state.c_str());
-    client.publish("disc/switch/Regnerdings/state", state.c_str(), false);
+    Serial.printf("Switch state: %s\n", mqtt_state.c_str());
+
+    m_Lcd.setCursor(0, 1);
+    m_Lcd.write(lcd_state.c_str());
+    enableLcdBacklight();
+
+    client.publish("disc/switch/Regnerdings/state", mqtt_state.c_str(), false);
 }
 
 // get the state of a switch
@@ -201,18 +251,21 @@ String getSwitch(int port)
 }
 
 // operate the switch on the given port
-void setState(int port, bool state)
+void setSwitch(int port, bool state)
 {
     if (state)
     {
-        digitalWrite(m_Ports[port - 1], HIGH);
+        digitalWrite(m_Ports[port - 1], HIGH); // ON
+        m_LastOnTime[port - 1] = millis();
     }
     else
     {
-        digitalWrite(m_Ports[port - 1], LOW);
+        digitalWrite(m_Ports[port - 1], LOW); // OFF
+        m_LastOnTime[port - 1] = 0;
     }
 
     m_SwitchState[port - 1] = state;
+    txSwitchState();
 }
 
 // parse port from topic
