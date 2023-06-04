@@ -11,6 +11,9 @@ const char m_CompileDate[] = __DATE__ " " __TIME__;
 WiFiClient espClient;
 PubSubClient client(espClient);
 
+// activity LED config
+const byte m_ActivityLed = D8;
+
 // D1 Pinout guide https://randomnerdtutorials.com/esp8266-pinout-reference-gpios/
 // relay/switch config
 const byte m_Ports[NUMPORTS] = {D1, D2, D5, D6, D7};
@@ -48,6 +51,7 @@ void setup()
     sensor_init(m_i2cPorts[0], m_i2cPorts[1]);
     setupLcd();
     button_setup();
+    activityLed_setup();
 
     wifi_setup();
     mqtt_setup();
@@ -89,6 +93,12 @@ void loop()
 void button_setup()
 {
     pinMode(m_Button, INPUT);
+}
+
+void activityLed_setup()
+{
+    pinMode(m_ActivityLed, OUTPUT);
+    digitalWrite(m_ActivityLed, LOW);
 }
 
 void wifi_setup()
@@ -385,9 +395,11 @@ void txSwitchState()
 
     Serial.printf("Switch state: %s\n", mqtt_state.c_str());
     client.publish("disc/switch/Regnerdings/state", mqtt_state.c_str(), false);
+
+    setActivityLed();
 }
 
-// get the state of a switch
+// get the state of a switch, "ON" or "OFF"
 String getSwitch(int port)
 {
     return m_SwitchState[port - 1] ? "ON" : "OFF";
@@ -410,6 +422,19 @@ void setSwitch(int port, bool state)
     m_SwitchState[port - 1] = state;
     txSwitchState();
     m_LastScreenUpdate = 0;
+}
+
+void setActivityLed()
+{
+    for (int i = 1; i <= NUMPORTS; i++)
+    {
+        if (getSwitch(i) == "ON")
+        {
+            digitalWrite(m_ActivityLed, HIGH);
+            return;
+        }
+    }
+    digitalWrite(m_ActivityLed, LOW);
 }
 
 // parse port from topic
