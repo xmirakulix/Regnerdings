@@ -1,0 +1,376 @@
+input_number:
+  regnerdings_vorne_runtime:
+    name: Laufzeit vorne
+    min: 0
+    max: 30
+    step: 1
+    unit_of_measurement: min
+    icon: mdi:clock
+
+  regnerdings_mitte_runtime:
+    name: Laufzeit mitte
+    min: 0
+    max: 30
+    step: 1
+    unit_of_measurement: min
+    icon: mdi:clock
+
+  regnerdings_hinten_runtime:
+    name: Laufzeit hinten
+    min: 0
+    max: 30
+    step: 1
+    unit_of_measurement: min
+    icon: mdi:clock
+
+  regnerdings_hochbeete_runtime:
+    name: Laufzeit Hochbeete
+    min: 0
+    max: 30
+    step: 1
+    unit_of_measurement: min
+    icon: mdi:clock
+
+  regnerdings_hecke_runtime:
+    name: Laufzeit Hecke
+    min: 0
+    max: 30
+    step: 1
+    unit_of_measurement: min
+    icon: mdi:clock
+
+  regnerdings_season:
+    name: Regner Saisonanpassung
+    min: 0
+    max: 150
+    step: 10
+    mode: slider
+    unit_of_measurement: "%"
+    icon: mdi:water-percent
+
+input_boolean:
+  regnerdings_rasen_tage_mo:
+    name: Montag
+    icon: mdi:calendar
+  regnerdings_rasen_tage_di:
+    name: Dienstag
+    icon: mdi:calendar
+  regnerdings_rasen_tage_mi:
+    name: Mittwoch
+    icon: mdi:calendar
+  regnerdings_rasen_tage_do:
+    name: Donnerstag
+    icon: mdi:calendar
+  regnerdings_rasen_tage_fr:
+    name: Freitag
+    icon: mdi:calendar
+  regnerdings_rasen_tage_sa:
+    name: Samstag
+    icon: mdi:calendar
+  regnerdings_rasen_tage_so:
+    name: Sonntag
+    icon: mdi:calendar
+
+  regnerdings_hochbeete_tage_mo:
+    name: Montag
+    icon: mdi:calendar
+  regnerdings_hochbeete_tage_di:
+    name: Dienstag
+    icon: mdi:calendar
+  regnerdings_hochbeete_tage_mi:
+    name: Mittwoch
+    icon: mdi:calendar
+  regnerdings_hochbeete_tage_do:
+    name: Donnerstag
+    icon: mdi:calendar
+  regnerdings_hochbeete_tage_fr:
+    name: Freitag
+    icon: mdi:calendar
+  regnerdings_hochbeete_tage_sa:
+    name: Samstag
+    icon: mdi:calendar
+  regnerdings_hochbeete_tage_so:
+    name: Sonntag
+    icon: mdi:calendar
+
+  regnerdings_hecke_tage_mo:
+    name: Montag
+    icon: mdi:calendar
+  regnerdings_hecke_tage_di:
+    name: Dienstag
+    icon: mdi:calendar
+  regnerdings_hecke_tage_mi:
+    name: Mittwoch
+    icon: mdi:calendar
+  regnerdings_hecke_tage_do:
+    name: Donnerstag
+    icon: mdi:calendar
+  regnerdings_hecke_tage_fr:
+    name: Freitag
+    icon: mdi:calendar
+  regnerdings_hecke_tage_sa:
+    name: Samstag
+    icon: mdi:calendar
+  regnerdings_hecke_tage_so:
+    name: Sonntag
+    icon: mdi:calendar
+
+input_datetime:
+  regnerdings_rasen_on_time:
+    name: Startzeit Rasen
+    has_date: false
+    has_time: true
+
+  regnerdings_hochbeete_on_time:
+    name: Startzeit Hochbeete
+    has_date: false
+    has_time: true
+
+  regnerdings_hecke_on_time:
+    name: Startzeit Hecke
+    has_date: false
+    has_time: true
+
+sensor:
+  - platform: template
+    sensors:
+      regnerdings_vorne_time_remaining:
+        friendly_name: "Laufzeit verbleibend"
+        value_template: >
+          {% if is_state("valve.regnerdings_p1", "off") %} 0
+          {% else %}
+          {% set countdown_timer = [ ((states.input_number.regnerdings_vorne_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) 
+          | int - ((as_timestamp(now()) - as_timestamp(states.valve.regnerdings_p1.last_changed)) / 60)
+          | round(0) ,0 ] | max %}
+          {{ countdown_timer }}
+          {% endif %}
+        icon_template: >
+          {% if is_state("sensor.regnerdings_vorne_time_remaining", "0") %} mdi:water-pump-off
+          {% else %} mdi:water-pump {% endif %}
+        unit_of_measurement: "min"
+
+      regnerdings_mitte_time_remaining:
+        friendly_name: "Laufzeit verbleibend"
+        value_template: >
+          {% if is_state("valve.regnerdings_p2", "off") %} 0
+          {% else %}
+          {% set countdown_timer = [ ((states.input_number.regnerdings_mitte_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) 
+          | int - ((as_timestamp(now()) - as_timestamp(states.valve.regnerdings_p2.last_changed)) / 60)
+          | round(0) ,0 ] | max %}
+          {{ countdown_timer }}
+          {% endif %}
+        icon_template: >
+          {% if is_state("sensor.regnerdings_mitte_time_remaining", "0") %} mdi:water-pump-off
+          {% else %} mdi:water-pump {% endif %}
+        unit_of_measurement: "min"
+
+      regnerdings_hinten_time_remaining:
+        friendly_name: "Laufzeit verbleibend"
+        value_template: >
+          {% if is_state("valve.regnerdings_p3", "off") %} 0
+          {% else %}
+          {% set countdown_timer = [ ((states.input_number.regnerdings_hinten_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) 
+          | int - ((as_timestamp(now()) - as_timestamp(states.valve.regnerdings_p3.last_changed)) / 60)
+          | round(0) ,0 ] | max %}
+          {{ countdown_timer }}
+          {% endif %}
+        icon_template: >
+          {% if is_state("sensor.regnerdings_hinten_time_remaining", "0") %} mdi:water-pump-off
+          {% else %} mdi:water-pump {% endif %}
+        unit_of_measurement: "min"
+
+      regnerdings_hochbeete_time_remaining:
+        friendly_name: "Laufzeit verbleibend"
+        value_template: >
+          {% if is_state("valve.regnerdings_p4", "off") %} 0
+          {% else %}
+          {% set countdown_timer = [ ((states.input_number.regnerdings_hochbeete_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) 
+          | int - ((as_timestamp(now()) - as_timestamp(states.valve.regnerdings_p4.last_changed)) / 60)
+          | round(0) ,0 ] | max %}
+          {{ countdown_timer }}
+          {% endif %}
+        icon_template: >
+          {% if is_state("sensor.regnerdings_hochbeete_time_remaining", "0") %} mdi:water-pump-off
+          {% else %} mdi:water-pump {% endif %}
+        unit_of_measurement: "min"
+
+      regnerdings_hecke_time_remaining:
+        friendly_name: "Laufzeit verbleibend"
+        value_template: >
+          {% if is_state("valve.regnerdings_p5", "off") %} 0
+          {% else %}
+          {% set countdown_timer = [ ((states.input_number.regnerdings_hecke_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) 
+          | int - ((as_timestamp(now()) - as_timestamp(states.valve.regnerdings_p5.last_changed)) / 60)
+          | round(0) ,0 ] | max %}
+          {{ countdown_timer }}
+          {% endif %}
+        icon_template: >
+          {% if is_state("sensor.regnerdings_hecke_time_remaining", "0") %} mdi:water-pump-off
+          {% else %} mdi:water-pump {% endif %}
+        unit_of_measurement: "min"
+
+binary_sensor:
+  - platform: template
+    sensors:
+      regnerdings_rasen_day_active:
+        friendly_name: Rasen heute aktiv
+        value_template: >-
+          {{ (( is_state('input_boolean.regnerdings_rasen_tage_mo', 'on') and now().weekday() == 0 )
+          or  ( is_state('input_boolean.regnerdings_rasen_tage_di', 'on') and now().weekday() == 1 )
+          or  ( is_state('input_boolean.regnerdings_rasen_tage_mi', 'on') and now().weekday() == 2 )
+          or  ( is_state('input_boolean.regnerdings_rasen_tage_do', 'on') and now().weekday() == 3 )
+          or  ( is_state('input_boolean.regnerdings_rasen_tage_fr', 'on') and now().weekday() == 4 )
+          or  ( is_state('input_boolean.regnerdings_rasen_tage_sa', 'on') and now().weekday() == 5 )
+          or  ( is_state('input_boolean.regnerdings_rasen_tage_so', 'on') and now().weekday() == 6 ))
+          }}
+
+      regnerdings_hochbeete_day_active:
+        friendly_name: Hochbeete heute aktiv
+        value_template: >-
+          {{ (( is_state('input_boolean.regnerdings_hochbeete_tage_mo', 'on') and now().weekday() == 0 )
+          or  ( is_state('input_boolean.regnerdings_hochbeete_tage_di', 'on') and now().weekday() == 1 )
+          or  ( is_state('input_boolean.regnerdings_hochbeete_tage_mi', 'on') and now().weekday() == 2 )
+          or  ( is_state('input_boolean.regnerdings_hochbeete_tage_do', 'on') and now().weekday() == 3 )
+          or  ( is_state('input_boolean.regnerdings_hochbeete_tage_fr', 'on') and now().weekday() == 4 )
+          or  ( is_state('input_boolean.regnerdings_hochbeete_tage_sa', 'on') and now().weekday() == 5 )
+          or  ( is_state('input_boolean.regnerdings_hochbeete_tage_so', 'on') and now().weekday() == 6 ))
+          }}
+
+      regnerdings_hecke_day_active:
+        friendly_name: Hecke heute aktiv
+        value_template: >-
+          {{ (( is_state('input_boolean.regnerdings_hecke_tage_mo', 'on') and now().weekday() == 0 )
+          or  ( is_state('input_boolean.regnerdings_hecke_tage_di', 'on') and now().weekday() == 1 )
+          or  ( is_state('input_boolean.regnerdings_hecke_tage_mi', 'on') and now().weekday() == 2 )
+          or  ( is_state('input_boolean.regnerdings_hecke_tage_do', 'on') and now().weekday() == 3 )
+          or  ( is_state('input_boolean.regnerdings_hecke_tage_fr', 'on') and now().weekday() == 4 )
+          or  ( is_state('input_boolean.regnerdings_hecke_tage_sa', 'on') and now().weekday() == 5 )
+          or  ( is_state('input_boolean.regnerdings_hecke_tage_so', 'on') and now().weekday() == 6 ))
+          }}
+
+script:
+  regnerdings_run:
+    alias: Regnerdings starten
+    icon: mdi:play-circle-outline
+    mode: restart
+    fields:
+      zone:
+        name: zone
+        description: Welche zone soll gestartet werden?
+        example: stop, vorne, mitte, hinten, hochbeete, hecke; oder alle
+    sequence:
+      - service: valve.close_valve
+        target:
+          entity_id:
+            - valve.regnerdings_p1
+            - valve.regnerdings_p2
+            - valve.regnerdings_p3
+            - valve.regnerdings_p4
+            - valve.regnerdings_p5
+      - choose:
+          - conditions: "{{ zone == 'vorne' }}"
+            sequence:
+              - service: valve.open_valve
+                entity_id: valve.regnerdings_p1
+              - delay: 00:{{ ((states.input_number.regnerdings_vorne_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) | round(0) }}:00
+              - service: valve.close_valve
+                entity_id: valve.regnerdings_p1
+          - conditions: "{{ zone == 'mitte' }}"
+            sequence:
+              - service: valve.open_valve
+                entity_id: valve.regnerdings_p2
+              - delay: 00:{{ ((states.input_number.regnerdings_mitte_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) | round(0) }}:00
+              - service: valve.close_valve
+                entity_id: valve.regnerdings_p2
+          - conditions: "{{ zone == 'hinten' }}"
+            sequence:
+              - service: valve.open_valve
+                entity_id: valve.regnerdings_p3
+              - delay: 00:{{ ((states.input_number.regnerdings_hinten_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) | round(0) }}:00
+              - service: valve.close_valve
+                entity_id: valve.regnerdings_p3
+          - conditions: "{{ zone == 'hochbeete' }}"
+            sequence:
+              - service: valve.open_valve
+                entity_id: valve.regnerdings_p4
+              - delay: 00:{{ ((states.input_number.regnerdings_hochbeete_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) | round(0) }}:00
+              - service: valve.close_valve
+                entity_id: valve.regnerdings_p4
+          - conditions: "{{ zone == 'hecke' }}"
+            sequence:
+              - service: valve.open_valve
+                entity_id: valve.regnerdings_p5
+              - delay: 00:{{ ((states.input_number.regnerdings_hecke_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) | round(0) }}:00
+              - service: valve.close_valve
+                entity_id: valve.regnerdings_p5
+          - conditions: "{{ zone == 'rasen' }}"
+            sequence:
+              - service: valve.open_valve
+                entity_id: valve.regnerdings_p1
+              - delay: 00:{{ ((states.input_number.regnerdings_vorne_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) | round(0) }}:00
+              - service: valve.open_valve
+                entity_id: valve.regnerdings_p2
+              - delay: 00:00:05
+              - service: valve.close_valve
+                entity_id: valve.regnerdings_p1
+              - delay: 00:{{ ((states.input_number.regnerdings_mitte_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) | round(0) }}:00
+              - service: valve.open_valve
+                entity_id: valve.regnerdings_p3
+              - delay: 00:00:05
+              - service: valve.close_valve
+                entity_id: valve.regnerdings_p2
+              - delay: 00:{{ ((states.input_number.regnerdings_hinten_runtime.state | float) * (states.input_number.regnerdings_season.state | float /100)) | round(0) }}:00
+              - service: valve.close_valve
+                entity_id: valve.regnerdings_p3
+      - service: valve.close_valve
+        target:
+          entity_id:
+            - valve.regnerdings_p1
+            - valve.regnerdings_p2
+            - valve.regnerdings_p3
+            - valve.regnerdings_p4
+            - valve.regnerdings_p5
+
+automation:
+  - id: Regnerdings_Rasen
+    mode: single
+    alias: Regnerdings Rasen
+    trigger:
+      - platform: time
+        at: input_datetime.regnerdings_rasen_on_time
+    condition:
+      - condition: state
+        entity_id: binary_sensor.regnerdings_rasen_day_active
+        state: "on"
+    action:
+      - service: script.regnerdings_run
+        data:
+          zone: rasen
+  - id: Regnerdings_Hochbeete
+    mode: single
+    alias: Regnerdings Hochbeete
+    trigger:
+      - platform: time
+        at: input_datetime.regnerdings_hochbeete_on_time
+    condition:
+      - condition: state
+        entity_id: binary_sensor.regnerdings_hochbeete_day_active
+        state: "on"
+    action:
+      - service: script.regnerdings_run
+        data:
+          zone: hochbeete
+  - id: Regnerdings_Hecke
+    mode: single
+    alias: Regnerdings Hecke
+    trigger:
+      - platform: time
+        at: input_datetime.regnerdings_hecke_on_time
+    condition:
+      - condition: state
+        entity_id: binary_sensor.regnerdings_hecke_day_active
+        state: "on"
+    action:
+      - service: script.regnerdings_run
+        data:
+          zone: hecke
