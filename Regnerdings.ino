@@ -1,9 +1,12 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
+#include <ArduinoOTA.h>
+#include <WiFiUdp.h>
 
 #include "include/WiFiSecret.h"
 #include "include/lcd.h"
 #include "include/th_sensor.h"
+#include "Arduino.h"
 
 #define NUMPORTS 5
 const char m_CompileDate[] = __DATE__ " " __TIME__;
@@ -53,6 +56,8 @@ void setup()
     button_setup();
     activityLed_setup();
 
+    ota_setup();
+
     wifi_setup();
     mqtt_setup();
 
@@ -66,6 +71,8 @@ void loop()
 {
     handleScreen();
     handleButton();
+
+    ArduinoOTA.handle();
 
     if (!client.loop())
     {
@@ -101,6 +108,89 @@ void activityLed_setup()
     digitalWrite(m_ActivityLed, LOW);
 }
 
+void ota_setup()
+{
+    Serial.println("OTA setup...");
+    m_Lcd.clear();
+    m_Lcd.print("OTA setup...");
+    m_Lcd.setCursor(0, 1);
+
+    ArduinoOTA.onStart([]()
+                       {
+                            String type;
+                            if (ArduinoOTA.getCommand() == U_FLASH)
+                            {
+                                type = "sketch";
+                            }
+                            else
+                            { // U_FS
+                                type = "filesystem";
+                            }
+                            // NOTE: if updating FS this would be the place to unmount FS using FS.end()
+
+                            Serial.println("OTA Start updating " + type);
+                            m_Lcd.clear();
+                            m_Lcd.print("OTA Start..."); 
+                            m_Lcd.setCursor(0, 1); });
+
+    ArduinoOTA.onEnd([]()
+                     { 
+                        Serial.println("\nOTA End"); 
+                        m_Lcd.clear();
+                        m_Lcd.print("OTA End"); 
+                        delay(1000); });
+
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total)
+                          {
+                            Serial.printf("OTA Progress: %u%%\r\n", (progress / (total / 100)));
+                            if ((progress / (total / 100)) % 10 == 0)
+                            {
+                                m_Lcd.setCursor(0, 1); 
+                                m_Lcd.print("OTA progress ");
+                                m_Lcd.print(progress / (total / 100));
+                                m_Lcd.print("%");
+                            } });
+
+    ArduinoOTA.onError([](ota_error_t error)
+                       {
+        Serial.printf("OTA Error[%u]: ", error);
+        m_Lcd.clear();
+        m_Lcd.print("OTA Error:");
+        m_Lcd.setCursor(0, 1); 
+        if (error == OTA_AUTH_ERROR)
+        {
+            Serial.println("Auth Failed");
+            m_Lcd.print("Auth Failed");
+        }
+        else if (error == OTA_BEGIN_ERROR)
+        {
+            Serial.println("Begin Failed");
+            m_Lcd.print("Begin Failed");
+        }
+        else if (error == OTA_CONNECT_ERROR)
+        {
+            Serial.println("Connect Failed");
+            m_Lcd.print("Connect Failed");
+        }
+        else if (error == OTA_RECEIVE_ERROR)
+        {
+            Serial.println("Receive Failed");
+            m_Lcd.print("Receive Failed");
+        }
+        else if (error == OTA_END_ERROR)
+        {
+            Serial.println("End Failed"); 
+            m_Lcd.print("End Failed");
+        } 
+        delay(1000); });
+
+    ArduinoOTA.setPassword("admin");
+    ArduinoOTA.begin();
+    Serial.println("OTA setup done");
+    m_Lcd.print("OTA setup done");
+    delay(1000);
+}
+
 void wifi_setup()
 {
     // Connect to WiFi
@@ -109,6 +199,7 @@ void wifi_setup()
     WiFi.begin(m_Ssid, m_Pass);
 
     Serial.println("Connecting to WiFi...");
+    m_Lcd.clear();
     m_Lcd.print("WiFi connecting");
     m_Lcd.setCursor(0, 1);
     while (WiFi.status() != WL_CONNECTED)
@@ -124,7 +215,7 @@ void wifi_setup()
 
 void mqtt_setup()
 {
-    client.setServer("homeassistant", 1883);
+    client.setServer("homeassistant.home", 1883);
     client.setCallback(mqtt_callback);
     client.setBufferSize(1024);
 
@@ -134,10 +225,18 @@ void mqtt_setup()
         while (!client.connected())
         {
             Serial.println("Connecting to MQTT...");
+            m_Lcd.setCursor(0, 0);
             m_Lcd.print("MQTT connecting");
             m_Lcd.setCursor(0, 1);
             client.connect("Regnerdings", "mosquitto", "mosquitto", "/home/state", 1, true, "offline");
             delay(100);
+            if (!client.connected())
+            {
+                Serial.printf("MQTT Error: %d\n", client.state());
+                m_Lcd.print("Error: ");
+                m_Lcd.print(client.state());
+            }
+            delay(1000);
         }
         Serial.println("Connected to MQTT");
         m_Lcd.print("MQTT connected!");
@@ -153,7 +252,7 @@ void mqtt_setup()
         strcpy(topic, "disc/sensor/Regnerdings/T/config");
         strcpy(cfgMsg, "{");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"name\":          \"Temperature\",");
-        sprintf(cfgMsg + strlen(cfgMsg), "  \"unique_id\":     \"Temperature\",");
+        sprintf(cfgMsg + strlen(cfgMsg), "  \"unique_id\":     \"Regnerdings_Temperature\",");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"device\":        { \"ids\" : [\"Regnerdings\"], \"name\" : \"Regnerdings\", \"mf\": \"xmirakulix\", \"mdl\": \"Regnerdings\", \"sw\": \"%s\" },", m_CompileDate);
         sprintf(cfgMsg + strlen(cfgMsg), "  \"device_class\":  \"temperature\",");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"unit_of_measurement\":  \"°C\",");
@@ -168,7 +267,7 @@ void mqtt_setup()
         strcpy(topic, "disc/sensor/Regnerdings/H/config");
         strcpy(cfgMsg, "{");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"name\":          \"Humidity\",");
-        sprintf(cfgMsg + strlen(cfgMsg), "  \"unique_id\":     \"Humidity\",");
+        sprintf(cfgMsg + strlen(cfgMsg), "  \"unique_id\":     \"Regnerdings_Humidity\",");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"device\":        { \"identifiers\" : [\"Regnerdings\"], \"name\" : \"Regnerdings\" },");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"device_class\":  \"humidity\",");
         sprintf(cfgMsg + strlen(cfgMsg), "  \"unit_of_measurement\":  \"%%\",");
@@ -184,17 +283,21 @@ void mqtt_setup()
             char cmd_topic[50];
 
             // configure Ports
-            sprintf(topic, "disc/switch/Regnerdings/P%d/config", i);
-            sprintf(cmd_topic, "disc/switch/Regnerdings/P%d/set", i);
+            sprintf(topic, "disc/valve/Regnerdings/P%d/config", i);
+            sprintf(cmd_topic, "disc/valve/Regnerdings/P%d/set", i);
 
             strcpy(cfgMsg, "{");
-            sprintf(cfgMsg + strlen(cfgMsg), "  \"name\":          \"Regnerdings P%d\",", i);
+            sprintf(cfgMsg + strlen(cfgMsg), "  \"name\":          \"P%d\",", i);
             sprintf(cfgMsg + strlen(cfgMsg), "  \"unique_id\":     \"Regnerdings_P%d\",", i);
             sprintf(cfgMsg + strlen(cfgMsg), "  \"device\":        { \"identifiers\" : [\"Regnerdings\"], \"name\" : \"Regnerdings\" },");
-            sprintf(cfgMsg + strlen(cfgMsg), "  \"device_class\":  \"switch\",");
+            sprintf(cfgMsg + strlen(cfgMsg), "  \"device_class\":  \"water\",");
             sprintf(cfgMsg + strlen(cfgMsg), "  \"icon\":          \"mdi:sprinkler\",");
             sprintf(cfgMsg + strlen(cfgMsg), "  \"value_template\":\"{{ value_json.P%d}}\",", i);
-            sprintf(cfgMsg + strlen(cfgMsg), "  \"state_topic\":   \"disc/switch/Regnerdings/state\",");
+            sprintf(cfgMsg + strlen(cfgMsg), "  \"payload_open\":   \"ON\",");
+            sprintf(cfgMsg + strlen(cfgMsg), "  \"state_open\":     \"ON\",");
+            sprintf(cfgMsg + strlen(cfgMsg), "  \"payload_close\":  \"OFF\",");
+            sprintf(cfgMsg + strlen(cfgMsg), "  \"state_closed\":   \"OFF\",");
+            sprintf(cfgMsg + strlen(cfgMsg), "  \"state_topic\":   \"disc/valve/Regnerdings/state\",");
             sprintf(cfgMsg + strlen(cfgMsg), "  \"command_topic\": \"%s\"", cmd_topic);
             sprintf(cfgMsg + strlen(cfgMsg), "}");
 
@@ -394,7 +497,7 @@ void txSwitchState()
     mqtt_state += "}";
 
     Serial.printf("Switch state: %s\n", mqtt_state.c_str());
-    client.publish("disc/switch/Regnerdings/state", mqtt_state.c_str(), false);
+    client.publish("disc/valve/Regnerdings/state", mqtt_state.c_str(), false);
 
     setActivityLed();
 }
